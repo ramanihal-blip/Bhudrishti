@@ -165,8 +165,8 @@ export async function loadImage(file: File): Promise<LoadedImage> {
 
   if (!img) return { file, url, features: base, overlays: {}, dataUrl: null };
 
-  const { canvas: previewCanvas, data } = drawToCanvas(img, 512);
-  const dataUrl = previewCanvas.toDataURL("image/jpeg", 0.85);
+  const { data } = drawToCanvas(img, GRID);
+  const dataUrl = drawToCanvas(img, 512).canvas.toDataURL("image/jpeg", 0.85);
   const pixel = computeStats(data);
   const overlays: Record<string, string> = {};
   const masks: Record<string, MaskInfo> = {};
