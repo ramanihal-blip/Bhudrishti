@@ -39,6 +39,7 @@ const STAGE_LABELS = [
   "Validating imagery",
   "Understanding query",
   "Selecting specialist",
+  "Running Hugging Face model",
   "Processing imagery",
   "Extracting evidence",
   "Composing answer",
@@ -104,10 +105,18 @@ function Index() {
     setChange(null);
   };
 
-  const runStages = async () => {
+  /** Stages advance with the run; the model stage stays "running" until the API responds. */
+  const runStages = async (pending: Promise<unknown>) => {
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
     for (let i = 0; i < STAGE_LABELS.length; i++) {
       setStages((prev) => prev.map((s, j) => (j === i ? { ...s, state: "running" } : s)));
       await sleep(260);
+      if (STAGE_LABELS[i] === "Running Hugging Face model") {
+        while (!settled) await sleep(200);
+      }
       setStages((prev) => prev.map((s, j) => (j === i ? { ...s, state: "done" } : s)));
     }
   };
@@ -137,12 +146,14 @@ function Index() {
     const request: AnalysisRequest = {
       query,
       images: activeImages.map((i) => i.features),
+      imageData: activeImages.map((i) => i.dataUrl),
       change: changeStats,
       lengthPreference: lengthPref,
     };
     requestRef.current = request;
 
-    const [res] = await Promise.all([analyzeQuery({ data: request }), runStages()]);
+    const pending = analyzeQuery({ data: request });
+    const [res] = await Promise.all([pending, runStages(pending)]);
     setResult(res);
     setBusy(false);
   };
@@ -199,6 +210,11 @@ function Index() {
       "ANSWER",
       result.answer,
       "",
+      "MODEL",
+      result.model
+        ? `${result.model.ok ? "Hugging Face" : "Hugging Face (unavailable)"}: ${result.model.modelId} — ${result.model.message}`
+        : "No model call was made for this result.",
+      "",
       `Evidence status: ${result.evidenceStatus}`,
       result.evidenceNote,
       "",
@@ -224,7 +240,7 @@ function Index() {
       ...(followUps.length
         ? ["FOLLOW-UP EVIDENCE QUESTIONS", ...followUps.map((f) => `Q: ${f.question}\nA: ${f.answer}`), ""]
         : []),
-      "Prototype notice: specialist adapters are deterministic pixel-statistics implementations. No model weights are bundled; all values above are measured from the uploaded pixels.",
+      "Notice: land-cover statistics are measured from the uploaded pixels in-browser; the model section above is the verbatim response of the Hugging Face model called for this request. Nothing is fabricated when a model result is unavailable.",
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/plain" });
     const url = URL.createObjectURL(blob);

@@ -11,6 +11,8 @@ export type LoadedImage = {
   url: string;
   features: ImageFeatures;
   overlays: Record<string, string>; // maskKind -> dataURL
+  /** Downscaled JPEG data URL sent to the server-side model adapter. */
+  dataUrl: string | null;
 };
 
 const GRID = 256;
@@ -161,9 +163,10 @@ export async function loadImage(file: File): Promise<LoadedImage> {
     el.src = url;
   });
 
-  if (!img) return { file, url, features: base, overlays: {} };
+  if (!img) return { file, url, features: base, overlays: {}, dataUrl: null };
 
   const { data } = drawToCanvas(img, GRID);
+  const dataUrl = drawToCanvas(img, 512).canvas.toDataURL("image/jpeg", 0.85);
   const pixel = computeStats(data);
   const overlays: Record<string, string> = {};
   const masks: Record<string, MaskInfo> = {};
@@ -177,6 +180,7 @@ export async function loadImage(file: File): Promise<LoadedImage> {
     file,
     url,
     overlays,
+    dataUrl,
     features: {
       ...base,
       width: img.naturalWidth,
