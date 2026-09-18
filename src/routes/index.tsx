@@ -137,6 +137,7 @@ function Index() {
     const request: AnalysisRequest = {
       query,
       images: activeImages.map((i) => i.features),
+      imageData: activeImages.map((i) => i.dataUrl),
       change: changeStats,
       lengthPreference: lengthPref,
     };
