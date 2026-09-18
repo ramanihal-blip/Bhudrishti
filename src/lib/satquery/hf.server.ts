@@ -75,7 +75,7 @@ async function callHf(entry: HfModelEntry, token: string, dataUrl: string): Prom
 
   const res =
     entry.task === "image-to-text"
-      ? await fetch(url, { method: "POST", headers: { ...headers, "Content-Type": "image/jpeg" }, body: bytes })
+      ? await fetch(url, { method: "POST", headers: { ...headers, "Content-Type": "image/jpeg" }, body: bytes.slice().buffer as ArrayBuffer })
       : await fetch(url, {
           method: "POST",
           headers: { ...headers, "Content-Type": "application/json" },
