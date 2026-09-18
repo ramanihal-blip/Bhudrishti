@@ -13,8 +13,6 @@
  * from the uploaded pixels in the browser or explicitly labelled unavailable.
  */
 
-import { runHuggingFace, type ModelOutcome } from "./hf.server";
-
 export type PixelStats = {
   meanLuma: number;
   colorfulness: number;
@@ -65,6 +63,19 @@ export type SpecialistId =
   | "grounding"
   | "change"
   | "optical-sar";
+
+export type HfScore = { label: string; score: number };
+
+/** Result of a real model call performed in the server-side adapter layer. */
+export type ModelOutcome = {
+  ok: boolean;
+  modelId: string;
+  task: string;
+  message: string;
+  reliable: boolean;
+  scores: HfScore[];
+  caption: string | null;
+};
 
 export type AnalysisRequest = {
   query: string;
@@ -615,7 +626,7 @@ function runSpecialist(id: SpecialistId, req: AnalysisRequest): AdapterOut {
   }
 }
 
-export async function analyze(req: AnalysisRequest): Promise<AnalysisResult> {
+export function analyze(req: AnalysisRequest, model: ModelOutcome | null = null): AnalysisResult {
   const validation = runDataDoctor(req.images);
   const routed = req.forceSpecialist
     ? { specialistId: req.forceSpecialist, task: NAME[req.forceSpecialist], reason: "Specialist explicitly selected for verification." }
@@ -623,10 +634,9 @@ export async function analyze(req: AnalysisRequest): Promise<AnalysisResult> {
 
   const out = runSpecialist(routed.specialistId, req);
 
-  // Real model call through the Hugging Face adapter layer (server-side only).
-  const model = await runHuggingFace(routed.specialistId, req.query, req.imageData?.[0] ?? null);
-
-  const modelCore: string[] = model.ok
+  const modelCore: string[] = !model
+    ? []
+    : model.ok
     ? model.reliable
       ? [`Hugging Face model ${model.modelId} analysed the uploaded image and reports: ${model.message}`]
       : [
@@ -636,18 +646,20 @@ export async function analyze(req: AnalysisRequest): Promise<AnalysisResult> {
         `No Hugging Face model result is available for this request (${model.message}), so nothing below comes from a trained model — only measured pixel statistics are reported.`,
       ];
 
-  const modelMeasurements: EvidenceRow[] = [
+  const modelMeasurements: EvidenceRow[] = !model
+    ? []
+    : [
     { label: "Hugging Face model", value: model.ok ? model.modelId : `${model.modelId} — unavailable` },
     ...(model.scores.length
       ? model.scores.slice(0, 4).map((s) => ({ label: `Model score · ${s.label}`, value: s.score.toFixed(3) }))
       : []),
-    ...(model.caption ? [{ label: "Model caption", value: model.caption }] : []),
-  ];
+      ...(model.caption ? [{ label: "Model caption", value: model.caption }] : []),
+    ];
 
   out.core = [...modelCore, ...out.core];
   out.findings = [...modelCore, ...out.findings];
   out.measurements = [...modelMeasurements, ...out.measurements];
-  if (model.ok && !model.reliable) out.status = "Insufficient evidence";
+  if (model?.ok && !model.reliable) out.status = "Insufficient evidence";
 
   const answer = compose(out.core, PROTO_EXTRAS, req.lengthPreference);
   const inputConfiguration =
@@ -675,7 +687,9 @@ export async function analyze(req: AnalysisRequest): Promise<AnalysisResult> {
       { stage: "Analysis executed", detail: `${routed.task} — ${routed.specialistId}` },
       {
         stage: "Hugging Face model",
-        detail: model.ok
+        detail: !model
+          ? "No model call attempted for this step"
+          : model.ok
           ? `${model.modelId} (${model.task}) responded${model.reliable ? "" : " without a decisive result"}`
           : `${model.modelId} not used — ${model.message}`,
       },
@@ -688,13 +702,13 @@ export async function analyze(req: AnalysisRequest): Promise<AnalysisResult> {
 }
 
 /** Independent consistency check with a different compatible specialist. */
-export async function challenge(req: AnalysisRequest, primary: AnalysisResult) {
+export function challenge(req: AnalysisRequest, primary: AnalysisResult) {
   const alternatives: SpecialistId[] =
     req.images.length >= 2
       ? (["change", "optical-sar", "captioning"] as SpecialistId[])
       : (["vqa", "grounding", "captioning"] as SpecialistId[]);
   const altId = alternatives.find((x) => x !== primary.specialistId)!;
-  const alt = await analyze({ ...req, forceSpecialist: altId });
+  const alt = analyze({ ...req, forceSpecialist: altId }, primary.model);
 
   const key = (r: AnalysisResult) => r.measurements[0]?.value ?? "";
   const num = (s: string) => parseFloat(s.replace(/[^0-9.\-]/g, ""));
@@ -718,14 +732,22 @@ export async function challenge(req: AnalysisRequest, primary: AnalysisResult) {
 }
 
 /** Follow-up question against the already-computed evidence. */
-export async function askEvidence(question: string, req: AnalysisRequest, primary: AnalysisResult) {
+export function askEvidence(
+  question: string,
+  req: AnalysisRequest,
+  primary: AnalysisResult,
+  model: ModelOutcome | null = null,
+) {
   const q = question.toLowerCase();
   let forced: SpecialistId | undefined;
   if (has(q, ["where", "show", "highlight", "region", "locate"])) forced = "grounding";
   else if (has(q, ["how much", "how many", "area", "percent", "%"])) forced = req.images.length >= 2 ? "change" : "vqa";
   else if (has(q, ["change", "before", "after"]) && req.images.length >= 2) forced = "change";
 
-  const result = await analyze(forced ? { ...req, query: question, forceSpecialist: forced } : { ...req, query: question });
+  const result = analyze(
+    forced ? { ...req, query: question, forceSpecialist: forced } : { ...req, query: question },
+    model,
+  );
   return {
     question,
     specialistName: result.specialistName,

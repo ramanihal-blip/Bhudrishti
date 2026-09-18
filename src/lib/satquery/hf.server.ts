@@ -7,7 +7,7 @@
  * call fails, is unauthorised, still loading, or the model is not confident
  * enough, that is reported verbatim to the agent.
  */
-import type { SpecialistId } from "./agent";
+import type { ModelOutcome, HfScore, SpecialistId } from "./agent";
 
 export type HfTask = "image-classification-zeroshot" | "image-to-text";
 
@@ -38,20 +38,6 @@ export const HF_MODELS: Record<SpecialistId, HfModelEntry> = {
     task: "image-classification-zeroshot",
     labels: LANDCOVER_LABELS,
   },
-};
-
-export type HfScore = { label: string; score: number };
-
-export type ModelOutcome = {
-  ok: boolean;
-  modelId: string;
-  task: HfTask;
-  /** Plain-language model response, or the reason there is none. */
-  message: string;
-  /** True only when the model output is decisive enough to answer the query. */
-  reliable: boolean;
-  scores: HfScore[];
-  caption: string | null;
 };
 
 const ENDPOINT = "https://router.huggingface.co/hf-inference/models";
