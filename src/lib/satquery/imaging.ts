@@ -11,6 +11,8 @@ export type LoadedImage = {
   url: string;
   features: ImageFeatures;
   overlays: Record<string, string>; // maskKind -> dataURL
+  /** Downscaled JPEG data URL sent to the server-side model adapter. */
+  dataUrl: string | null;
 };
 
 const GRID = 256;
