@@ -13,6 +13,8 @@
  * from the uploaded pixels in the browser or explicitly labelled unavailable.
  */
 
+import { runHuggingFace, type ModelOutcome } from "./hf.server";
+
 export type PixelStats = {
   meanLuma: number;
   colorfulness: number;
@@ -66,6 +68,8 @@ export type SpecialistId =
 
 export type AnalysisRequest = {
   query: string;
+  /** Downscaled JPEG data URLs, aligned with `images`, forwarded to the Hugging Face adapter. */
+  imageData?: (string | null)[];
   images: ImageFeatures[];
   change: ChangeStats;
   lengthPreference: "100-200" | "200-300";
@@ -88,6 +92,8 @@ export type AnalysisResult = {
   overlayRequest: OverlayRequest;
   trace: { stage: string; detail: string }[];
   validation: ValidationReport;
+  /** Real Hugging Face model response for this request, or null when no call was attempted. */
+  model: ModelOutcome | null;
 };
 
 export type OverlayRequest = {
@@ -609,13 +615,40 @@ function runSpecialist(id: SpecialistId, req: AnalysisRequest): AdapterOut {
   }
 }
 
-export function analyze(req: AnalysisRequest): AnalysisResult {
+export async function analyze(req: AnalysisRequest): Promise<AnalysisResult> {
   const validation = runDataDoctor(req.images);
   const routed = req.forceSpecialist
     ? { specialistId: req.forceSpecialist, task: NAME[req.forceSpecialist], reason: "Specialist explicitly selected for verification." }
     : routeQuery(req.query, req.images);
 
   const out = runSpecialist(routed.specialistId, req);
+
+  // Real model call through the Hugging Face adapter layer (server-side only).
+  const model = await runHuggingFace(routed.specialistId, req.query, req.imageData?.[0] ?? null);
+
+  const modelCore: string[] = model.ok
+    ? model.reliable
+      ? [`Hugging Face model ${model.modelId} analysed the uploaded image and reports: ${model.message}`]
+      : [
+          `Hugging Face model ${model.modelId} was called on this image but its output is not decisive: ${model.message} SatQuery therefore does not assert an answer to this query from the model.`,
+        ]
+    : [
+        `No Hugging Face model result is available for this request (${model.message}), so nothing below comes from a trained model — only measured pixel statistics are reported.`,
+      ];
+
+  const modelMeasurements: EvidenceRow[] = [
+    { label: "Hugging Face model", value: model.ok ? model.modelId : `${model.modelId} — unavailable` },
+    ...(model.scores.length
+      ? model.scores.slice(0, 4).map((s) => ({ label: `Model score · ${s.label}`, value: s.score.toFixed(3) }))
+      : []),
+    ...(model.caption ? [{ label: "Model caption", value: model.caption }] : []),
+  ];
+
+  out.core = [...modelCore, ...out.core];
+  out.findings = [...modelCore, ...out.findings];
+  out.measurements = [...modelMeasurements, ...out.measurements];
+  if (model.ok && !model.reliable) out.status = "Insufficient evidence";
+
   const answer = compose(out.core, PROTO_EXTRAS, req.lengthPreference);
   const inputConfiguration =
     req.images.length === 2
@@ -639,22 +672,29 @@ export function analyze(req: AnalysisRequest): AnalysisResult {
       { stage: "Imagery validated", detail: `${validation.headline} — ${validation.mode}` },
       { stage: "Image configuration", detail: inputConfiguration },
       { stage: "Specialist selected", detail: `${NAME[routed.specialistId]} — ${routed.reason}` },
-      { stage: "Analysis executed", detail: `${routed.task} (prototype adapter)` },
+      { stage: "Analysis executed", detail: `${routed.task} — ${routed.specialistId}` },
+      {
+        stage: "Hugging Face model",
+        detail: model.ok
+          ? `${model.modelId} (${model.task}) responded${model.reliable ? "" : " without a decisive result"}`
+          : `${model.modelId} not used — ${model.message}`,
+      },
       { stage: "Evidence extracted", detail: out.measurements.map((m) => `${m.label}: ${m.value}`).join(" · ") },
       { stage: "Answer prepared", detail: `Target length ${req.lengthPreference} words · ${out.status}` },
     ],
     validation,
+    model,
   };
 }
 
 /** Independent consistency check with a different compatible specialist. */
-export function challenge(req: AnalysisRequest, primary: AnalysisResult) {
+export async function challenge(req: AnalysisRequest, primary: AnalysisResult) {
   const alternatives: SpecialistId[] =
     req.images.length >= 2
       ? (["change", "optical-sar", "captioning"] as SpecialistId[])
       : (["vqa", "grounding", "captioning"] as SpecialistId[]);
   const altId = alternatives.find((x) => x !== primary.specialistId)!;
-  const alt = analyze({ ...req, forceSpecialist: altId });
+  const alt = await analyze({ ...req, forceSpecialist: altId });
 
   const key = (r: AnalysisResult) => r.measurements[0]?.value ?? "";
   const num = (s: string) => parseFloat(s.replace(/[^0-9.\-]/g, ""));
@@ -678,14 +718,14 @@ export function challenge(req: AnalysisRequest, primary: AnalysisResult) {
 }
 
 /** Follow-up question against the already-computed evidence. */
-export function askEvidence(question: string, req: AnalysisRequest, primary: AnalysisResult) {
+export async function askEvidence(question: string, req: AnalysisRequest, primary: AnalysisResult) {
   const q = question.toLowerCase();
   let forced: SpecialistId | undefined;
   if (has(q, ["where", "show", "highlight", "region", "locate"])) forced = "grounding";
   else if (has(q, ["how much", "how many", "area", "percent", "%"])) forced = req.images.length >= 2 ? "change" : "vqa";
   else if (has(q, ["change", "before", "after"]) && req.images.length >= 2) forced = "change";
 
-  const result = analyze(forced ? { ...req, query: question, forceSpecialist: forced } : { ...req, query: question });
+  const result = await analyze(forced ? { ...req, query: question, forceSpecialist: forced } : { ...req, query: question });
   return {
     question,
     specialistName: result.specialistName,
