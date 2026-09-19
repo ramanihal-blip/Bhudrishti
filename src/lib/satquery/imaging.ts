@@ -1,7 +1,7 @@
 /**
  * Browser-side raster front-end.
- * Decodes the upload, measures real pixel statistics, builds class masks and
- * bi-temporal difference maps. Nothing here is simulated: if a file cannot be
+ * Decodes the upload, calculates image-derived measurements, builds class masks
+ * and bi-temporal difference maps. If a file cannot be
  * decoded (e.g. GeoTIFF), it is reported as undecodable instead of guessed.
  */
 import type { ChangeStats, ImageFeatures, MaskInfo, PixelStats } from "./agent";

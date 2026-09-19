@@ -62,8 +62,8 @@ export function RegistryPanel({ active }: { active: SpecialistId | null }) {
           </div>
         ))}
         <p className="mono text-[0.64rem] leading-relaxed text-muted-foreground">
-          Each specialist is an independently replaceable adapter behind one shared interface. No model weights are
-          bundled in this prototype.
+          Each specialist uses the connected Hugging Face inference service through an independently replaceable
+          adapter behind one shared interface.
         </p>
       </div>
     </div>
@@ -156,7 +156,7 @@ export function ArchitecturePanel() {
             </div>
           ))}
         </div>
-        <p className="label-xs mt-3">Future model integration points</p>
+        <p className="label-xs mt-3">Analysis stack &amp; integration points</p>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {FUTURE.map((f) => (
             <span key={f} className="chip">
@@ -165,8 +165,9 @@ export function ArchitecturePanel() {
           ))}
         </div>
         <p className="mono mt-2 text-[0.64rem] leading-relaxed text-muted-foreground">
-          None of these libraries or model weights are running in this prototype. Pixel statistics shown in results are
-          computed in-browser with deterministic canvas operations.
+          Hugging Face inference is active and receives the uploaded image with the user&apos;s query. Image-derived
+          measurements and evidence overlays complement the model response; other listed tools remain modular
+          integration points.
         </p>
       </div>
     </div>

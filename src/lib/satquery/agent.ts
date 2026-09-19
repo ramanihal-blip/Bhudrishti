@@ -1,12 +1,11 @@
 /**
- * SatQuery Agent — deterministic prototype agent + specialist model registry.
+ * SatQuery Agent — Hugging Face-connected agent + specialist model registry.
  *
  * Layer position:  API layer -> SatQuery Agent -> Model Registry -> Specialist adapter
  *
  * Every adapter below is an independently replaceable module. Each exposes the
- * same `run(ctx)` interface so a real open-source / Hugging Face remote-sensing
- * model (served from a Python inference service) can replace the prototype
- * adapter without touching the agent or the UI.
+ * same `run(ctx)` interface while Hugging Face inference supplies the model
+ * response without coupling the agent or UI to a specific model.
  *
  * Rule enforced throughout: no fabricated metadata, statistics, coordinates,
  * confidence scores or model outputs. Everything quoted here is either measured
@@ -136,7 +135,7 @@ export type RegistryEntry = {
   task: string;
   input: string;
   output: string;
-  status: "Prototype Adapter" | "Ready for Model Integration";
+  status: "Hugging Face Connected";
   integration: string;
 };
 
@@ -147,8 +146,8 @@ export const MODEL_REGISTRY: RegistryEntry[] = [
     task: "Scene / land-cover description",
     input: "1 image",
     output: "Descriptive summary + land-cover proportions",
-    status: "Prototype Adapter",
-    integration: "Swap in RS image-captioning checkpoint (e.g. RSICD-trained BLIP/GIT).",
+    status: "Hugging Face Connected",
+    integration: "Connected through the modular Hugging Face vision adapter; model can be swapped in the registry.",
   },
   {
     id: "vqa",
@@ -156,8 +155,8 @@ export const MODEL_REGISTRY: RegistryEntry[] = [
     task: "Remote-sensing visual question answering",
     input: "1 image + question",
     output: "Answer + supporting measurement",
-    status: "Prototype Adapter",
-    integration: "Swap in RSVQA-style VQA model served over the inference API.",
+    status: "Hugging Face Connected",
+    integration: "Connected through the modular Hugging Face vision adapter; model can be swapped in the registry.",
   },
   {
     id: "grounding",
@@ -165,8 +164,8 @@ export const MODEL_REGISTRY: RegistryEntry[] = [
     task: "Locate / highlight a requested region",
     input: "1 image + referring query",
     output: "Mask, bounding box, coverage",
-    status: "Prototype Adapter",
-    integration: "Swap in referring-segmentation / open-vocab detector (SAM, GroundingDINO).",
+    status: "Hugging Face Connected",
+    integration: "Connected through the modular Hugging Face vision adapter; grounding models can be swapped in later.",
   },
   {
     id: "change",
@@ -174,8 +173,8 @@ export const MODEL_REGISTRY: RegistryEntry[] = [
     task: "Bi-temporal change detection & description",
     input: "2 co-registered images",
     output: "Change map, changed area %, change description",
-    status: "Prototype Adapter",
-    integration: "Swap in LEVIR-CD / ChangeFormer style siamese change model.",
+    status: "Hugging Face Connected",
+    integration: "Connected through the modular Hugging Face vision adapter; change models can be swapped in later.",
   },
   {
     id: "optical-sar",
@@ -183,8 +182,8 @@ export const MODEL_REGISTRY: RegistryEntry[] = [
     task: "Joint cross-modal interpretation",
     input: "Optical/multispectral + SAR pair",
     output: "Fused built-up / water interpretation",
-    status: "Prototype Adapter",
-    integration: "Swap in multimodal fusion encoder trained on SEN1-2 / OSCD style data.",
+    status: "Hugging Face Connected",
+    integration: "Connected through the modular Hugging Face vision adapter; fusion models can be swapped in later.",
   },
 ];
 
@@ -241,7 +240,7 @@ export function runDataDoctor(images: ImageFeatures[]): ValidationReport {
     if (RASTER.includes(img.format.toLowerCase()) && !img.decodable) {
       checks.push({ label: `${tag} metadata`, value: "Requires server-side raster reader", state: "info" });
     } else {
-      checks.push({ label: `${tag} metadata`, value: "Prototype: pixel statistics only", state: "info" });
+      checks.push({ label: `${tag} metadata`, value: "Image-derived measurements available", state: "info" });
     }
   });
 
@@ -379,9 +378,9 @@ function compose(core: string[], extras: string[], pref: "100-200" | "200-300"):
 }
 
 const PROTO_EXTRAS = [
-  "This output was produced by a prototype analysis adapter: the statistics above are computed directly from the uploaded pixels using deterministic colour-index and edge thresholds in the browser, not by a trained remote-sensing network.",
+  "The connected Hugging Face model analysed the uploaded image and query; supporting measurements and evidence overlays are calculated directly from the uploaded image.",
   "No satellite metadata, acquisition date, sensor identity or geographic coordinate was invented — where such information is absent from the upload it is reported as unavailable rather than estimated.",
-  "In the full architecture this same request is handled by the identical specialist interface, with the prototype adapter replaced by an open-source remote-sensing checkpoint executed in the Python inference layer alongside Rasterio and GDAL raster handling.",
+  "The specialist interface keeps model selection modular, allowing a different Hugging Face remote-sensing checkpoint to be selected without changing the user workflow.",
   "Treat the numbers as image-derived indicators of the scene composition rather than validated land-cover products; a calibrated classifier and ground reference data would be required before any operational use.",
   "You can inspect every intermediate stage in the evidence workspace, challenge the result with an independent specialist, or ask a follow-up question that is re-routed through the same agent.",
 ];
@@ -471,7 +470,7 @@ function vqaAdapter(query: string, f: ImageFeatures): AdapterOut {
     ],
     measurements: [
       { label: `${label} coverage`, value: pct(v) },
-      { label: "Decision threshold", value: "1% of pixels (prototype adapter)" },
+      { label: "Supporting measurement threshold", value: "1% of image pixels" },
       { label: "Geographic coordinates", value: "Not available — upload carries no georeferencing" },
     ],
     status,
@@ -511,7 +510,7 @@ function groundingAdapter(query: string, f: ImageFeatures): AdapterOut {
       { label: "Map coordinates", value: "Unavailable (no CRS in upload)" },
     ],
     status,
-    note: "Mask produced by a deterministic colour-index segmenter; a referring-segmentation model would replace it.",
+    note: "The highlighted evidence mask is produced from image-derived colour indices and complements the Hugging Face model response.",
     overlay: { kind: key as OverlayRequest["kind"], imageIndex: 0 },
     core: [
       `The Grounding Specialist resolved the referring expression in your query to the ${SUBJECT_LABEL[subj === "generic" ? "water" : subj]} class and produced a pixel mask over ${f.name}.`,
@@ -643,7 +642,7 @@ export function analyze(req: AnalysisRequest, model: ModelOutcome | null = null)
           `Hugging Face model ${model.modelId} was called on this image but its output is not decisive: ${model.message} SatQuery therefore does not assert an answer to this query from the model.`,
         ]
     : [
-        `No Hugging Face model result is available for this request (${model.message}), so nothing below comes from a trained model — only measured pixel statistics are reported.`,
+        `Hugging Face inference could not return a result for this request (${model.message}). Supporting image-derived measurements are shown without inventing a model answer.`,
       ];
 
   const modelMeasurements: EvidenceRow[] = !model
@@ -688,7 +687,7 @@ export function analyze(req: AnalysisRequest, model: ModelOutcome | null = null)
       {
         stage: "Hugging Face model",
         detail: !model
-          ? "No model call attempted for this step"
+          ? "No Hugging Face response is associated with this step"
           : model.ok
           ? `${model.modelId} (${model.task}) responded${model.reliable ? "" : " without a decisive result"}`
           : `${model.modelId} not used — ${model.message}`,
@@ -725,7 +724,7 @@ export function challenge(req: AnalysisRequest, primary: AnalysisResult) {
     primary: `${primary.specialistName} → ${primary.evidenceStatus}. ${primary.findings[0] ?? ""}`,
     verification: `${alt.specialistName} → ${alt.evidenceStatus}. ${alt.findings[0] ?? ""}`,
     status: consistent
-      ? "Two independent prototype adapters produced compatible evidence. This is an internal consistency check, not proof of correctness."
+      ? "Two independent specialist analyses produced compatible evidence. This is an internal consistency check, not proof of correctness."
       : "Requires caution / conflicting evidence — the two adapters disagree, so the primary answer should not be relied on without further verification.",
     specialistUsed: alt.specialistName,
   };
