@@ -213,7 +213,7 @@ function Index() {
       "MODEL",
       result.model
         ? `${result.model.ok ? "Hugging Face" : "Hugging Face (unavailable)"}: ${result.model.modelId} — ${result.model.message}`
-        : "No model call was made for this result.",
+        : "No Hugging Face response is associated with this result.",
       "",
       `Evidence status: ${result.evidenceStatus}`,
       result.evidenceNote,
@@ -240,7 +240,7 @@ function Index() {
       ...(followUps.length
         ? ["FOLLOW-UP EVIDENCE QUESTIONS", ...followUps.map((f) => `Q: ${f.question}\nA: ${f.answer}`), ""]
         : []),
-      "Notice: land-cover statistics are measured from the uploaded pixels in-browser; the model section above is the verbatim response of the Hugging Face model called for this request. Nothing is fabricated when a model result is unavailable.",
+      "Notice: the model section above contains the Hugging Face response for this request. Supporting land-cover measurements are calculated directly from the uploaded image, and unavailable information is never inferred.",
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -308,8 +308,8 @@ function Index() {
           />
         </div>
         <p className="mono pb-6 text-center text-[0.64rem] text-muted-foreground">
-          Prototype adapters compute deterministic pixel statistics in-browser. No model weights are bundled and no
-          metadata is fabricated. {change ? `Bi-temporal change computed: ${change.changedPercent.toFixed(2)}%.` : ""}
+          Connected Hugging Face models analyze the uploaded imagery and query. Supporting image measurements are
+          calculated from the uploaded pixels; unavailable metadata is never inferred. {change ? `Bi-temporal change computed: ${change.changedPercent.toFixed(2)}%.` : ""}
         </p>
       </main>
     </div>
