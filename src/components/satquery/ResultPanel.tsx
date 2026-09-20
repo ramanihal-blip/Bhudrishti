@@ -60,6 +60,14 @@ const statusChip = (s: EvidenceStatus) =>
         ? "chip chip-warn"
         : "chip chip-warn";
 
+const cleanFollowUpAnswer = (answer: string) => {
+  const withoutPrefix = answer.replace(/^Hugging Face model .*? reports:\s*/i, "");
+  const sentences = withoutPrefix
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => !/hugging face|specialist|adapter|model id|inference|routing/i.test(sentence));
+  return sentences.join(" ") || "This evidence does not provide a reliable answer to that question.";
+};
+
 export function ResultPanel(props: Props) {
   const {
     stages,
@@ -87,7 +95,7 @@ export function ResultPanel(props: Props) {
   const isOpticalSar = result?.specialistId === "optical-sar";
   const currentStage = stages.find((stage) => stage.state === "running")?.label;
   const visibleMeasurements = result?.measurements.filter((m) => !/model|caption|score/i.test(m.label)) ?? [];
-  const displayedAnswer = result?.model?.ok
+  const displayedAnswer = result?.model?.ok && result.model.reliable
     ? result.model.message
     : result?.model
       ? "The analysis could not produce a reliable answer for this image. Please try again with a clearer image or a more specific question."
@@ -172,12 +180,11 @@ export function ResultPanel(props: Props) {
                       {challenge.consistent ? "✓ " : "⚠ "}
                       {challenge.headline}
                     </div>
-                    <dl className="mono mt-2 space-y-1 text-[0.7rem]">
-                      <div>
-                        <dt className="text-muted-foreground">Status:</dt>
-                        <dd>{challenge.status}</dd>
-                      </div>
-                    </dl>
+                     <p className="mt-2 text-sm text-foreground/85">
+                       {challenge.consistent
+                         ? "A second analysis found compatible evidence. This is a consistency check, not a guarantee of correctness."
+                         : "A second analysis found conflicting evidence. Please treat this result with caution."}
+                     </p>
                   </div>
                 ) : null}
               </div>
@@ -197,7 +204,7 @@ export function ResultPanel(props: Props) {
                 <>
                   <div className="panel">
                     <div className="panel-head">
-                      <Layers size={14} /> Evidence Workspace
+                       <Layers size={14} /> Visual Evidence
                     </div>
                     <div className="grid gap-3 p-3 md:grid-cols-2">
                       {isPair && (isChange || isOpticalSar) ? (
@@ -304,7 +311,7 @@ export function ResultPanel(props: Props) {
                             <span className="text-sm font-semibold">{f.question}</span>
                             <span className={statusChip(f.evidenceStatus)}>{f.evidenceStatus}</span>
                           </div>
-                          <p className="mono mt-1.5 text-[0.72rem] text-foreground/85">{f.answer}</p>
+                           <p className="mt-1.5 text-sm text-foreground/85">{cleanFollowUpAnswer(f.answer)}</p>
                           {f.overlayUrl ? (
                             <img
                               src={f.overlayUrl}

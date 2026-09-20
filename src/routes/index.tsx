@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Satellite, Globe2 } from "lucide-react";
 import { InputPanel } from "@/components/satquery/InputPanel";
 import {
@@ -181,7 +181,7 @@ function Index() {
 
   const onDownload = () => {
     if (!result) return;
-    const displayedAnswer = result.model?.ok
+    const displayedAnswer = result.model?.ok && result.model.reliable
       ? result.model.message
       : result.model
         ? "The analysis could not produce a reliable answer for this image. Please try again with a clearer image or a more specific question."
