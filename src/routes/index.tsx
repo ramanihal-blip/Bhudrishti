@@ -1,8 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Satellite, Globe2 } from "lucide-react";
 import { InputPanel } from "@/components/satquery/InputPanel";
-import { AgentFlow, ArchitecturePanel, DataDoctorPanel, RegistryPanel } from "@/components/satquery/Panels";
 import {
   ResultPanel,
   type ChallengeResult,
@@ -20,13 +19,13 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Upload satellite imagery, ask a natural-language question and get an evidence-backed answer with validation, specialist routing and an execution trace.",
+          "Upload satellite imagery, ask a natural-language question and get a clear, evidence-backed analysis.",
       },
       { property: "og:title", content: "BhuDrishti — SatQuery AI" },
       {
         property: "og:description",
         content:
-          "Natural-language querying of satellite imagery with data validation, specialist model routing and verifiable evidence.",
+          "Natural-language satellite imagery analysis with clear answers and useful visual evidence.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -36,13 +35,10 @@ export const Route = createFileRoute("/")({
 });
 
 const STAGE_LABELS = [
-  "Validating imagery",
-  "Understanding query",
-  "Selecting specialist",
-  "Running Hugging Face model",
-  "Processing imagery",
-  "Extracting evidence",
-  "Composing answer",
+  "Analyzing your satellite imagery…",
+  "Processing your question…",
+  "Generating insights…",
+  "Analysis complete.",
 ];
 
 const blankStages = (): Stage[] => STAGE_LABELS.map((label) => ({ label, state: "pending" as const }));
@@ -64,7 +60,6 @@ function Index() {
   const [asking, setAsking] = useState(false);
   const requestRef = useRef<AnalysisRequest | null>(null);
 
-  const validation = useMemo(() => result?.validation ?? null, [result]);
   const activeImages = images.filter(Boolean) as LoadedImage[];
 
   const overlayFor = useCallback(
@@ -114,7 +109,7 @@ function Index() {
     for (let i = 0; i < STAGE_LABELS.length; i++) {
       setStages((prev) => prev.map((s, j) => (j === i ? { ...s, state: "running" } : s)));
       await sleep(260);
-      if (STAGE_LABELS[i] === "Running Hugging Face model") {
+      if (STAGE_LABELS[i] === "Generating insights…") {
         while (!settled) await sleep(200);
       }
       setStages((prev) => prev.map((s, j) => (j === i ? { ...s, state: "done" } : s)));
@@ -186,53 +181,37 @@ function Index() {
 
   const onDownload = () => {
     if (!result) return;
+    const displayedAnswer = result.model?.ok && result.model.reliable
+      ? result.model.message
+      : result.model
+        ? "The analysis could not produce a reliable answer for this image. Please try again with a clearer image or a more specific question."
+        : result.answer;
     const lines = [
       "BHUDRISHTI — SATQUERY AI · ANALYSIS REPORT",
       `Generated: ${new Date().toISOString()}`,
       "",
       `Query: ${query}`,
-      `Task: ${result.task}`,
-      `Specialist used: ${result.specialistName}`,
-      `Input configuration: ${result.inputConfiguration}`,
-      `Routing reason: ${result.routingReason}`,
       "",
       "IMAGES",
       ...activeImages.map(
         (i) =>
-          `- ${i.features.name} · ${i.features.width ?? "?"}x${i.features.height ?? "?"} px · ${i.features.format.toUpperCase()} · ${i.features.sizeKB} KB · ${i.features.modality}`,
+          `- ${i.features.name} · ${i.features.width ?? "?"}x${i.features.height ?? "?"} px · ${i.features.format.toUpperCase()} · ${i.features.sizeKB} KB`,
       ),
       "",
-      "DATA DOCTOR",
-      `${result.validation.headline} — ${result.validation.mode}`,
-      ...result.validation.checks.map((c) => `- ${c.label}: ${c.value}`),
-      ...result.validation.issues.map((s) => `! ${s}`),
-      "",
       "ANSWER",
-      result.answer,
-      "",
-      "MODEL",
-      result.model
-        ? `${result.model.ok ? "Hugging Face" : "Hugging Face (unavailable)"}: ${result.model.modelId} — ${result.model.message}`
-        : "No Hugging Face response is associated with this result.",
+      displayedAnswer,
       "",
       `Evidence status: ${result.evidenceStatus}`,
-      result.evidenceNote,
       "",
       "MEASUREMENTS",
-      ...result.measurements.map((m) => `- ${m.label}: ${m.value}`),
-      "",
-      "FINDINGS",
-      ...result.findings.map((f) => `- ${f}`),
-      "",
-      "EXECUTION TRACE",
-      ...result.trace.map((t, i) => `${i + 1}. ${t.stage}: ${t.detail}`),
+      ...result.measurements
+        .filter((m) => !/model|caption|score/i.test(m.label))
+        .map((m) => `- ${m.label}: ${m.value}`),
       "",
       ...(challenge
         ? [
             "VERIFICATION (CHALLENGE)",
             challenge.headline,
-            `Primary: ${challenge.primary}`,
-            `Verification (${challenge.specialistUsed}): ${challenge.verification}`,
             challenge.status,
             "",
           ]
@@ -240,7 +219,7 @@ function Index() {
       ...(followUps.length
         ? ["FOLLOW-UP EVIDENCE QUESTIONS", ...followUps.map((f) => `Q: ${f.question}\nA: ${f.answer}`), ""]
         : []),
-      "Notice: the model section above contains the Hugging Face response for this request. Supporting land-cover measurements are calculated directly from the uploaded image, and unavailable information is never inferred.",
+      "Notice: results are based on the uploaded imagery. Unavailable information is not inferred.",
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -250,8 +229,6 @@ function Index() {
     a.click();
     URL.revokeObjectURL(url);
   };
-
-  const activeFlowIndex = busy ? stages.filter((s) => s.state === "done").length : result ? 8 : 0;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -273,7 +250,6 @@ function Index() {
       </header>
 
       <main className="mx-auto max-w-[1400px] space-y-4 px-4 py-5">
-        <AgentFlow activeIndex={activeFlowIndex} />
         <div className="grid gap-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
           <div className="space-y-4">
             <InputPanel
@@ -287,9 +263,6 @@ function Index() {
               onAnalyze={onAnalyze}
               busy={busy}
             />
-            <DataDoctorPanel report={validation} />
-            <RegistryPanel active={result?.specialistId ?? null} />
-            <ArchitecturePanel />
           </div>
           <ResultPanel
             stages={stages}
@@ -307,10 +280,6 @@ function Index() {
             onDownload={onDownload}
           />
         </div>
-        <p className="mono pb-6 text-center text-[0.64rem] text-muted-foreground">
-          Connected Hugging Face models analyze the uploaded imagery and query. Supporting image measurements are
-          calculated from the uploaded pixels; unavailable metadata is never inferred. {change ? `Bi-temporal change computed: ${change.changedPercent.toFixed(2)}%.` : ""}
-        </p>
       </main>
     </div>
   );

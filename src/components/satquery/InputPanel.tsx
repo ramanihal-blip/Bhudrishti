@@ -89,7 +89,7 @@ function Slot({
               {image.features.format.toUpperCase()} · {image.features.sizeKB} KB
             </div>
             <div className={image.features.decodable ? "chip chip-primary" : "chip chip-warn"}>
-              {image.features.modality}
+              {image.features.decodable ? "Ready" : "Preview unavailable"}
             </div>
           </div>
         </div>
