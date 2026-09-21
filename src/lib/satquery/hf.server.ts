@@ -165,6 +165,7 @@ export async function runHuggingFace(
   specialistId: SpecialistId,
   query: string,
   dataUrl: string | null | undefined,
+  lengthPreference: LengthPreference = "100-200",
 ): Promise<ModelOutcome> {
   const entry = HF_MODELS[specialistId];
   const token = process.env["HUGGINGFACE_API_TOKEN"];
