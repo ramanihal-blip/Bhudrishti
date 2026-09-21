@@ -97,11 +97,11 @@ function buildSystem(query: string, length: LengthPreference): string {
 
 /** Registry: specialist -> Hugging Face model. Replace any entry to swap the model. */
 export const HF_MODELS: Record<SpecialistId, HfModelEntry> = {
-  captioning: { id: "google/gemma-3-4b-it", task: "vision-chat", system: RS_SYSTEM },
-  vqa: { id: "google/gemma-3-4b-it", task: "vision-chat", system: RS_SYSTEM },
-  grounding: { id: "google/gemma-3-4b-it", task: "vision-chat", system: RS_SYSTEM },
-  change: { id: "google/gemma-3-4b-it", task: "vision-chat", system: RS_SYSTEM },
-  "optical-sar": { id: "google/gemma-3-4b-it", task: "vision-chat", system: RS_SYSTEM },
+  captioning: { id: "google/gemma-3-4b-it", task: "vision-chat" },
+  vqa: { id: "google/gemma-3-4b-it", task: "vision-chat" },
+  grounding: { id: "google/gemma-3-4b-it", task: "vision-chat" },
+  change: { id: "google/gemma-3-4b-it", task: "vision-chat" },
+  "optical-sar": { id: "google/gemma-3-4b-it", task: "vision-chat" },
 };
 
 const CHAT_ENDPOINT = "https://router.huggingface.co/v1/chat/completions";
@@ -111,24 +111,34 @@ function fail(entry: HfModelEntry, message: string): ModelOutcome {
   return { ok: false, modelId: entry.id, task: entry.task, message, reliable: false, scores: [], caption: null };
 }
 
-async function visionChat(entry: HfModelEntry, token: string, dataUrl: string, query: string) {
+async function visionChat(
+  entry: HfModelEntry,
+  token: string,
+  dataUrl: string,
+  query: string,
+  length: LengthPreference,
+) {
   const res = await fetch(CHAT_ENDPOINT, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: entry.id,
       messages: [
-        { role: "system", content: entry.system ?? RS_SYSTEM },
+        { role: "system", content: entry.system ?? buildSystem(query, length) },
         {
           role: "user",
           content: [
-            { type: "text", text: query },
+            {
+              type: "text",
+              text: `Question: ${query}\n\nAnswer this exact question using the image below. ${LENGTH_RULES[length]}`,
+            },
             { type: "image_url", image_url: { url: dataUrl } },
           ],
         },
       ],
-      max_tokens: 320,
-      temperature: 0.2,
+      max_tokens: MAX_TOKENS[length],
+      temperature: 0.65,
+      top_p: 0.9,
     }),
   });
   if (!res.ok) throw new Error(`Hugging Face returned ${res.status}. ${(await res.text()).slice(0, 240)}`);
