@@ -19,7 +19,7 @@ async function callModel(req: AnalysisRequest, query: string) {
   const routed = req.forceSpecialist
     ? { specialistId: req.forceSpecialist }
     : routeQuery(query, req.images);
-  return runHuggingFace(routed.specialistId, query, req.imageData?.[0] ?? null);
+  return runHuggingFace(routed.specialistId, query, req.imageData?.[0] ?? null, req.lengthPreference);
 }
 
 export const analyzeQuery = createServerFn({ method: "POST" })

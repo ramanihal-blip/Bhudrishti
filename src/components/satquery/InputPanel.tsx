@@ -27,8 +27,8 @@ type Props = {
   images: (LoadedImage | null)[];
   onFile: (index: number, file: File) => void;
   onClear: (index: number) => void;
-  lengthPref: "100-200" | "200-300";
-  setLengthPref: (v: "100-200" | "200-300") => void;
+  lengthPref: "50-100" | "100-200" | "200-300";
+  setLengthPref: (v: "50-100" | "100-200" | "200-300") => void;
   onAnalyze: () => void;
   busy: boolean;
 };
@@ -194,13 +194,18 @@ export function InputPanel(props: Props) {
         <div>
           <span className="label-xs">Response length</span>
           <div className="mt-2 flex gap-2">
-            {(["100-200", "200-300"] as const).map((v) => (
+            {([
+              { v: "50-100", label: "Short" },
+              { v: "100-200", label: "Medium" },
+              { v: "200-300", label: "Detailed" },
+            ] as const).map(({ v, label }) => (
               <button
                 key={v}
-                className={`btn flex-1 ${lengthPref === v ? "btn-primary" : ""}`}
+                className={`btn flex-1 flex-col gap-0 py-2 ${lengthPref === v ? "btn-primary" : ""}`}
                 onClick={() => setLengthPref(v)}
               >
-                {v} words
+                <span>{label}</span>
+                <span className="mono text-[0.6rem] opacity-70">{v} words</span>
               </button>
             ))}
           </div>

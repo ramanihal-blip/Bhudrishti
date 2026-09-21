@@ -48,7 +48,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function Index() {
   const [query, setQuery] = useState("");
   const [images, setImages] = useState<(LoadedImage | null)[]>([null, null]);
-  const [lengthPref, setLengthPref] = useState<"100-200" | "200-300">("100-200");
+  const [lengthPref, setLengthPref] = useState<"50-100" | "100-200" | "200-300">("100-200");
   const [stages, setStages] = useState<Stage[]>(blankStages());
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
