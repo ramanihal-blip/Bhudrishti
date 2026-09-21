@@ -22,11 +22,78 @@ export type HfModelEntry = {
   system?: string;
 };
 
-const RS_SYSTEM =
-  "You are a remote-sensing image analyst. Answer only from what is visible in the supplied satellite/aerial image. " +
-  "Be concrete about land cover (water, flooding, vegetation, cropland, built-up area, bare soil, cloud). " +
-  "If the image is too ambiguous, low quality or does not contain the information asked for, reply starting with " +
-  "'CANNOT DETERMINE:' followed by the reason. Never invent coordinates, dates, sensors or statistics. Answer in 2-4 sentences.";
+export type LengthPreference = "50-100" | "100-200" | "200-300";
+
+const LENGTH_RULES: Record<LengthPreference, string> = {
+  "50-100":
+    "Write 50-100 words. Give the direct answer plus the single strongest piece of visual evidence. No preamble, no lists.",
+  "100-200":
+    "Write 100-200 words. Give the direct answer, two or three specific visual observations that support it, and a short note on how certain you are.",
+  "200-300":
+    "Write 200-300 words. Give the direct answer, then explain your reasoning step by step, describe several distinct visual cues (colour, texture, pattern, shape, spatial arrangement, relative extent, location within the frame), note anything that limits certainty, and close with an explicit confidence judgement.",
+};
+
+const MAX_TOKENS: Record<LengthPreference, number> = {
+  "50-100": 220,
+  "100-200": 420,
+  "200-300": 700,
+};
+
+/** Question-type cues so different questions get different analytical framing. */
+const FOCUS_RULES: { test: RegExp; focus: string }[] = [
+  {
+    test: /\b(land ?cover|land ?use|features? (are )?visible|what (do you |can you )?see|describe)\b/i,
+    focus:
+      "Focus on identifying and separating land-cover classes: vegetation, water bodies, built-up/urban fabric, bare land or soil, agricultural or cropland parcels. Say roughly where each sits in the frame and how dominant it is.",
+  },
+  {
+    test: /\b(urban (expansion|growth|development)|build|construct|settlement|suitab|infrastructure)\b/i,
+    focus:
+      "Focus on development suitability: terrain and slope, how much open or undeveloped land exists, environmental constraints such as water bodies or wetlands, apparent accessibility (roads, existing corridors), and the pattern of existing development.",
+  },
+  {
+    test: /\b(risk|hazard|flood|erosion|deforest|landslide|slope|drought|degrad|damage|pollut)\b/i,
+    focus:
+      "Focus on visible environmental risk indicators: standing or encroaching water and flooding, bare eroded surfaces or gullying, cleared or thinning forest, unstable or steep slopes, dry or stressed vegetation, and water-related stress. State which risks are visible and which cannot be judged from the image.",
+  },
+  {
+    test: /\b(vegetat|forest|canopy|green|crop|ndvi|biomass|density)\b/i,
+    focus:
+      "Focus on vegetation: how much of the frame is vegetated, how the vegetation is distributed (continuous, patchy, linear, field parcels), apparent density and vigour differences, and where the sparsest and densest areas lie.",
+  },
+  {
+    test: /\b(water|lake|river|pond|reservoir|coast|wetland)\b/i,
+    focus:
+      "Focus on water: presence, extent, shape and edges of any water body, turbidity or colour differences, and whether boundaries look natural or engineered.",
+  },
+  {
+    test: /\b(chang|before|after|difference|increas|decreas|compare)\b/i,
+    focus:
+      "Focus on change: what appears different, where in the frame it occurs, the likely nature of the change (clearing, construction, inundation, regrowth), and its approximate extent relative to the scene.",
+  },
+  {
+    test: /\b(highlight|where exactly|locate|show (me )?(the|that)|which part|bounding)\b/i,
+    focus:
+      "Focus on location: describe precisely where the requested feature sits using frame-relative terms (upper-left, centre, along the southern edge), its shape and its approximate share of the image.",
+  },
+];
+
+function buildSystem(query: string, length: LengthPreference): string {
+  const focus =
+    FOCUS_RULES.find((r) => r.test.test(query))?.focus ??
+    "Focus tightly on exactly what the question asks. Do not drift into a general description of the scene.";
+
+  return [
+    "You are a remote-sensing image analyst.",
+    "ANSWER THE USER'S QUESTION FIRST. The image is evidence for that question, not the subject of a caption.",
+    "Never produce a generic scene caption and never reuse stock phrasing between analyses.",
+    focus,
+    "Structure: (1) a direct answer to the question in the first sentence, (2) the specific visual evidence you based it on, (3) why that evidence supports your conclusion, (4) your confidence and any limitation.",
+    "Only state what is visible in the supplied image. Never invent coordinates, dates, sensors, area figures or statistics.",
+    "If the image genuinely cannot answer the question, reply starting with 'CANNOT DETERMINE:' followed by the reason.",
+    LENGTH_RULES[length],
+  ].join(" ");
+}
 
 /** Registry: specialist -> Hugging Face model. Replace any entry to swap the model. */
 export const HF_MODELS: Record<SpecialistId, HfModelEntry> = {
