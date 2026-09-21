@@ -175,7 +175,13 @@ export async function runHuggingFace(
 
   try {
     if (entry.task === "vision-chat") {
-      const text = await visionChat(entry, token, dataUrl, query.trim() || "Describe the land cover in this image.");
+      const text = await visionChat(
+        entry,
+        token,
+        dataUrl,
+        query.trim() || "Describe the land cover in this image.",
+        lengthPreference,
+      );
       if (!text) return fail(entry, "The model returned an empty response for this image.");
       const declined = /^cannot determine/i.test(text) || /\b(cannot|unable to) determine\b/i.test(text);
       return {
