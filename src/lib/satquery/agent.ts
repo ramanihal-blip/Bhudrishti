@@ -82,7 +82,7 @@ export type AnalysisRequest = {
   imageData?: (string | null)[];
   images: ImageFeatures[];
   change: ChangeStats;
-  lengthPreference: "100-200" | "200-300";
+  lengthPreference: "50-100" | "100-200" | "200-300";
   forceSpecialist?: SpecialistId;
 };
 
@@ -366,9 +366,9 @@ function statusFromCoverage(c: number): EvidenceStatus {
   return "Insufficient evidence";
 }
 
-function compose(core: string[], extras: string[], pref: "100-200" | "200-300"): string {
-  const min = pref === "100-200" ? 110 : 210;
-  const max = pref === "100-200" ? 200 : 300;
+function compose(core: string[], extras: string[], pref: AnalysisRequest["lengthPreference"]): string {
+  const min = pref === "50-100" ? 55 : pref === "100-200" ? 110 : 210;
+  const max = pref === "50-100" ? 100 : pref === "100-200" ? 200 : 300;
   const parts = [...core];
   let i = 0;
   const count = () => parts.join(" ").split(/\s+/).filter(Boolean).length;

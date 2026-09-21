@@ -22,19 +22,86 @@ export type HfModelEntry = {
   system?: string;
 };
 
-const RS_SYSTEM =
-  "You are a remote-sensing image analyst. Answer only from what is visible in the supplied satellite/aerial image. " +
-  "Be concrete about land cover (water, flooding, vegetation, cropland, built-up area, bare soil, cloud). " +
-  "If the image is too ambiguous, low quality or does not contain the information asked for, reply starting with " +
-  "'CANNOT DETERMINE:' followed by the reason. Never invent coordinates, dates, sensors or statistics. Answer in 2-4 sentences.";
+export type LengthPreference = "50-100" | "100-200" | "200-300";
+
+const LENGTH_RULES: Record<LengthPreference, string> = {
+  "50-100":
+    "Write 50-100 words. Give the direct answer plus the single strongest piece of visual evidence. No preamble, no lists.",
+  "100-200":
+    "Write 100-200 words. Give the direct answer, two or three specific visual observations that support it, and a short note on how certain you are.",
+  "200-300":
+    "Write 200-300 words. Give the direct answer, then explain your reasoning step by step, describe several distinct visual cues (colour, texture, pattern, shape, spatial arrangement, relative extent, location within the frame), note anything that limits certainty, and close with an explicit confidence judgement.",
+};
+
+const MAX_TOKENS: Record<LengthPreference, number> = {
+  "50-100": 220,
+  "100-200": 420,
+  "200-300": 700,
+};
+
+/** Question-type cues so different questions get different analytical framing. */
+const FOCUS_RULES: { test: RegExp; focus: string }[] = [
+  {
+    test: /\b(land ?cover|land ?use|features? (are )?visible|what (do you |can you )?see|describe)\b/i,
+    focus:
+      "Focus on identifying and separating land-cover classes: vegetation, water bodies, built-up/urban fabric, bare land or soil, agricultural or cropland parcels. Say roughly where each sits in the frame and how dominant it is.",
+  },
+  {
+    test: /\b(urban (expansion|growth|development)|build|construct|settlement|suitab|infrastructure)\b/i,
+    focus:
+      "Focus on development suitability: terrain and slope, how much open or undeveloped land exists, environmental constraints such as water bodies or wetlands, apparent accessibility (roads, existing corridors), and the pattern of existing development.",
+  },
+  {
+    test: /\b(risk|hazard|flood|erosion|deforest|landslide|slope|drought|degrad|damage|pollut)\b/i,
+    focus:
+      "Focus on visible environmental risk indicators: standing or encroaching water and flooding, bare eroded surfaces or gullying, cleared or thinning forest, unstable or steep slopes, dry or stressed vegetation, and water-related stress. State which risks are visible and which cannot be judged from the image.",
+  },
+  {
+    test: /\b(vegetat|forest|canopy|green|crop|ndvi|biomass|density)\b/i,
+    focus:
+      "Focus on vegetation: how much of the frame is vegetated, how the vegetation is distributed (continuous, patchy, linear, field parcels), apparent density and vigour differences, and where the sparsest and densest areas lie.",
+  },
+  {
+    test: /\b(water|lake|river|pond|reservoir|coast|wetland)\b/i,
+    focus:
+      "Focus on water: presence, extent, shape and edges of any water body, turbidity or colour differences, and whether boundaries look natural or engineered.",
+  },
+  {
+    test: /\b(chang|before|after|difference|increas|decreas|compare)\b/i,
+    focus:
+      "Focus on change: what appears different, where in the frame it occurs, the likely nature of the change (clearing, construction, inundation, regrowth), and its approximate extent relative to the scene.",
+  },
+  {
+    test: /\b(highlight|where exactly|locate|show (me )?(the|that)|which part|bounding)\b/i,
+    focus:
+      "Focus on location: describe precisely where the requested feature sits using frame-relative terms (upper-left, centre, along the southern edge), its shape and its approximate share of the image.",
+  },
+];
+
+function buildSystem(query: string, length: LengthPreference): string {
+  const focus =
+    FOCUS_RULES.find((r) => r.test.test(query))?.focus ??
+    "Focus tightly on exactly what the question asks. Do not drift into a general description of the scene.";
+
+  return [
+    "You are a remote-sensing image analyst.",
+    "ANSWER THE USER'S QUESTION FIRST. The image is evidence for that question, not the subject of a caption.",
+    "Never produce a generic scene caption and never reuse stock phrasing between analyses.",
+    focus,
+    "Structure: (1) a direct answer to the question in the first sentence, (2) the specific visual evidence you based it on, (3) why that evidence supports your conclusion, (4) your confidence and any limitation.",
+    "Only state what is visible in the supplied image. Never invent coordinates, dates, sensors, area figures or statistics.",
+    "If the image genuinely cannot answer the question, reply starting with 'CANNOT DETERMINE:' followed by the reason.",
+    LENGTH_RULES[length],
+  ].join(" ");
+}
 
 /** Registry: specialist -> Hugging Face model. Replace any entry to swap the model. */
 export const HF_MODELS: Record<SpecialistId, HfModelEntry> = {
-  captioning: { id: "google/gemma-3-4b-it", task: "vision-chat", system: RS_SYSTEM },
-  vqa: { id: "google/gemma-3-4b-it", task: "vision-chat", system: RS_SYSTEM },
-  grounding: { id: "google/gemma-3-4b-it", task: "vision-chat", system: RS_SYSTEM },
-  change: { id: "google/gemma-3-4b-it", task: "vision-chat", system: RS_SYSTEM },
-  "optical-sar": { id: "google/gemma-3-4b-it", task: "vision-chat", system: RS_SYSTEM },
+  captioning: { id: "google/gemma-3-4b-it", task: "vision-chat" },
+  vqa: { id: "google/gemma-3-4b-it", task: "vision-chat" },
+  grounding: { id: "google/gemma-3-4b-it", task: "vision-chat" },
+  change: { id: "google/gemma-3-4b-it", task: "vision-chat" },
+  "optical-sar": { id: "google/gemma-3-4b-it", task: "vision-chat" },
 };
 
 const CHAT_ENDPOINT = "https://router.huggingface.co/v1/chat/completions";
@@ -44,24 +111,34 @@ function fail(entry: HfModelEntry, message: string): ModelOutcome {
   return { ok: false, modelId: entry.id, task: entry.task, message, reliable: false, scores: [], caption: null };
 }
 
-async function visionChat(entry: HfModelEntry, token: string, dataUrl: string, query: string) {
+async function visionChat(
+  entry: HfModelEntry,
+  token: string,
+  dataUrl: string,
+  query: string,
+  length: LengthPreference,
+) {
   const res = await fetch(CHAT_ENDPOINT, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: entry.id,
       messages: [
-        { role: "system", content: entry.system ?? RS_SYSTEM },
+        { role: "system", content: entry.system ?? buildSystem(query, length) },
         {
           role: "user",
           content: [
-            { type: "text", text: query },
+            {
+              type: "text",
+              text: `Question: ${query}\n\nAnswer this exact question using the image below. ${LENGTH_RULES[length]}`,
+            },
             { type: "image_url", image_url: { url: dataUrl } },
           ],
         },
       ],
-      max_tokens: 320,
-      temperature: 0.2,
+      max_tokens: MAX_TOKENS[length],
+      temperature: 0.65,
+      top_p: 0.9,
     }),
   });
   if (!res.ok) throw new Error(`Hugging Face returned ${res.status}. ${(await res.text()).slice(0, 240)}`);
@@ -88,6 +165,7 @@ export async function runHuggingFace(
   specialistId: SpecialistId,
   query: string,
   dataUrl: string | null | undefined,
+  lengthPreference: LengthPreference = "100-200",
 ): Promise<ModelOutcome> {
   const entry = HF_MODELS[specialistId];
   const token = process.env["HUGGINGFACE_API_TOKEN"];
@@ -97,7 +175,13 @@ export async function runHuggingFace(
 
   try {
     if (entry.task === "vision-chat") {
-      const text = await visionChat(entry, token, dataUrl, query.trim() || "Describe the land cover in this image.");
+      const text = await visionChat(
+        entry,
+        token,
+        dataUrl,
+        query.trim() || "Describe the land cover in this image.",
+        lengthPreference,
+      );
       if (!text) return fail(entry, "The model returned an empty response for this image.");
       const declined = /^cannot determine/i.test(text) || /\b(cannot|unable to) determine\b/i.test(text);
       return {
